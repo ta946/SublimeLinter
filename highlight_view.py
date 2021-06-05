@@ -71,6 +71,7 @@ MULTILINES = re.compile('(?s)\n(?=.)')
 # Sublime >= 4074 supports underline styles on white space
 # https://github.com/sublimehq/sublime_text/issues/137
 SUBLIME_SUPPORTS_WS_SQUIGGLES = int(sublime.version()) >= 4074
+SUBLIME_SUPPORTS_REGION_ANNOTATIONS = int(sublime.version()) >= 4050
 
 State = {
     'active_view': None,
@@ -287,7 +288,7 @@ def prepare_highlights_data(
 
         uid = error['uid']
         linter_name = error['linter']
-        key = Squiggle(linter_name, uid, scope, flags, demote_while_busy, alt_scope)
+        key = Squiggle(linter_name, uid, scope, flags, demote_while_busy, alt_scope, message=error["msg"])
         by_region_id[key] = [error['region']]
 
     return by_region_id
@@ -383,9 +384,10 @@ class Squiggle(str):
     linter_name = ''  # type: str
     uid = ''  # type: str
     demotable = False  # type: bool
+    message = ""  # type: str
 
-    def __new__(cls, linter_name, uid, scope, flags, demotable=False, alt_scope=None):
-        # type: (str, str, str, int, bool, str) -> Squiggle
+    def __new__(cls, linter_name, uid, scope, flags, demotable=False, alt_scope=None, message=""):
+        # type: (str, str, str, int, bool, str, str) -> Squiggle
         key = (
             'SL.{}.Highlights.|{}|{}|{}'
             .format(linter_name, uid, scope, flags)
@@ -400,6 +402,7 @@ class Squiggle(str):
         self.linter_name = linter_name
         self.uid = uid
         self.demotable = demotable
+        self.message = message
         return self
 
     def _replace(self, **overrides):
@@ -407,7 +410,7 @@ class Squiggle(str):
         base = {
             name: overrides.pop(name, getattr(self, name))
             for name in {
-                'linter_name', 'uid', 'scope', 'flags', 'demotable', 'alt_scope'
+                'linter_name', 'uid', 'scope', 'flags', 'demotable', 'alt_scope', 'message'
             }
         }
         return Squiggle(**base)
@@ -505,7 +508,25 @@ else:
 def draw_view_region(view, key, regions):
     # type: (sublime.View, RegionKey, List[sublime.Region]) -> None
     with StorageLock:
-        view.add_regions(key, regions, key.scope, key.icon, key.flags)
+        if isinstance(key, Squiggle):
+            if SUBLIME_SUPPORTS_REGION_ANNOTATIONS and key.visible():
+                annotations = {
+                    "annotations": [key.message],
+                    "annotation_color":
+                        view.style_for_scope(key.scope)["foreground"]
+                }
+            else:
+                annotations = {}
+            view.add_regions(
+                key,
+                regions,
+                key.scope,
+                key.icon,
+                key.flags,
+                **annotations
+            )
+        else:
+            view.add_regions(key, regions, key.scope, key.icon, key.flags)
         vid = view.id()
         CURRENTSTORE[vid].add(key)
         EVERSTORE[vid].add(key)
