@@ -16,18 +16,23 @@ if MYPY:
 
 
 class sublime_linter_goto_error(sublime_plugin.TextCommand):
-    def run(self, edit, direction='next', count=1, wrap=False):
+    def run(self, edit, direction='next', count=1, wrap=False, skip_warnings_if_errors=False):
         # type: (sublime.Edit, Direction, int, bool) -> None
-        goto(self.view, direction, count, wrap)
+        goto(self.view, direction, count, wrap, skip_warnings_if_errors)
 
 
-def goto(view, direction, count, wrap):
+def goto(view, direction, count, wrap, skip_warnings_if_errors):
     # type: (sublime.View, Direction, int, bool) -> None
     filename = util.get_filename(view)
     errors = persist.file_errors.get(filename)
     if not errors:
         flash(view, 'No problems')
         return
+
+    if skip_warnings_if_errors:
+        errors_of_type_error = [error for error in errors if error['error_type'] == 'error']
+        if len(errors_of_type_error):
+            errors = errors_of_type_error
 
     cursor = view.sel()[0].begin()
 
